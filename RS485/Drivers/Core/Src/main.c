@@ -1,26 +1,35 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2023 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2023 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "rs485.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#define RE_GPIO RE_GPIO_Port, RE_Pin
+#define DE_GPIO DE_GPIO_Port, DE_Pin
+
+#define POWER_GPIO PWR_GPIO_Port, PWR_Pin
 
 /* USER CODE END Includes */
 
@@ -36,10 +45,38 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+static inline void EWG_enableTransmitMode() {
 
+	HAL_GPIO_WritePin(DE_GPIO, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(RE_GPIO, GPIO_PIN_SET);
+}
+
+static inline void EWG_enableReciveMode() {
+
+	HAL_GPIO_WritePin(DE_GPIO, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(RE_GPIO, GPIO_PIN_RESET);
+}
+
+static inline void EWG_shutdownMode() {
+
+	HAL_GPIO_WritePin(RE_GPIO, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(DE_GPIO, GPIO_PIN_SET);
+}
+
+static inline void EWG_powerEnable() {
+
+	HAL_GPIO_WritePin(POWER_GPIO, GPIO_PIN_SET);
+	HAL_Delay(3000);
+}
+
+static inline void EWG_powerDisable() {
+
+	HAL_GPIO_WritePin(POWER_GPIO, GPIO_PIN_RESET);
+}
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+UART_HandleTypeDef huart5;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
@@ -50,13 +87,33 @@ UART_HandleTypeDef huart3;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_UART5_Init(void);
 /* USER CODE BEGIN PFP */
+#define RX_BUFFER_SIZE 64
+
+uint8_t rxBuffer[RX_BUFFER_SIZE];
+
+char *data = "Hello, UART TEST OK! \r\n";
+
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+	if (huart->Instance == UART5) {
+		// In dữ liệu đã nhận bằng UART
+		EWG_enableTransmitMode();
+		HAL_UART_Transmit(&huart5, (uint8_t*) data, strlen(data),
+		HAL_MAX_DELAY);
+		HAL_UART_Transmit(&huart3, (uint8_t*) data, strlen(data),
+				HAL_MAX_DELAY);
+		EWG_enableReciveMode();
+
+		// Kích hoạt lại việc nhận dữ liệu
+		HAL_UARTEx_ReceiveToIdle_IT(&huart3, rxBuffer, RX_BUFFER_SIZE);
+	}
+}
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
 /* USER CODE END 0 */
 
 /**
@@ -88,18 +145,23 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART3_UART_Init();
+  MX_UART5_Init();
   /* USER CODE BEGIN 2 */
+  EWG_powerEnable();
+  EWG_enableReciveMode();
 
-  /* USER CODE END 2 */
+  HAL_UARTEx_ReceiveToIdle_IT(&huart3, (uint8_t *)rxBuffer, RX_BUFFER_SIZE);
 
-  /* Infinite loop */
+  HAL_UART_Transmit(&huart5, (uint8_t*) data, strlen(data),	HAL_MAX_DELAY);
+
+
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+	while (1) {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+
+	}
   /* USER CODE END 3 */
 }
 
@@ -142,6 +204,39 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief UART5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_UART5_Init(void)
+{
+
+  /* USER CODE BEGIN UART5_Init 0 */
+
+  /* USER CODE END UART5_Init 0 */
+
+  /* USER CODE BEGIN UART5_Init 1 */
+
+  /* USER CODE END UART5_Init 1 */
+  huart5.Instance = UART5;
+  huart5.Init.BaudRate = 115200;
+  huart5.Init.WordLength = UART_WORDLENGTH_8B;
+  huart5.Init.StopBits = UART_STOPBITS_1;
+  huart5.Init.Parity = UART_PARITY_NONE;
+  huart5.Init.Mode = UART_MODE_TX_RX;
+  huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart5.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN UART5_Init 2 */
+
+  /* USER CODE END UART5_Init 2 */
+
 }
 
 /**
@@ -191,6 +286,8 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, PWR_Pin|RE_Pin|DE_Pin, GPIO_PIN_RESET);
@@ -217,11 +314,10 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+	/* User can add his own implementation to report the HAL error return state */
+	__disable_irq();
+	while (1) {
+	}
   /* USER CODE END Error_Handler_Debug */
 }
 
